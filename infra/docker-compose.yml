@@ -21,11 +21,16 @@ services:
       context: ../backend
     environment:
       CRM_DATABASE_URL: postgresql+psycopg://crm:crm@db:5432/crm
+      CRM_ATTACHMENTS_DIR: /data/attachments
+      CRM_MAX_UPLOAD_BYTES: "10485760"
     depends_on:
       db:
         condition: service_healthy
     ports:
       - "8000:8000"
+    volumes:
+      # Attachment blobs live outside the image so they survive rebuilds.
+      - crm-attachments:/data/attachments
 
   frontend:
     build:
@@ -39,3 +44,4 @@ services:
 
 volumes:
   crm-db-data:
+  crm-attachments:

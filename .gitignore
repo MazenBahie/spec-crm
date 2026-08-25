@@ -29,3 +29,6 @@ Thumbs.db
 .idea/
 .vscode/
 *.tsbuildinfo
+
+# Local attachment blobs
+backend/var/
