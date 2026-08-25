@@ -1,0 +1,1 @@
+-- Reserved for future CRM schema bootstrap. See later stories in .squad/plans/checkout/.
