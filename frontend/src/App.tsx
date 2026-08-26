@@ -1,8 +1,9 @@
-import { Link, Route, Routes, useLocation } from "react-router-dom";
+import { Link, Navigate, Route, Routes, useLocation } from "react-router-dom";
 
 import CustomerDetailPage from "./pages/CustomerDetailPage";
 import CustomerEditPage from "./pages/CustomerEditPage";
 import CustomersListPage from "./pages/CustomersListPage";
+import DashboardPage from "./pages/DashboardPage";
 import HealthPage from "./pages/HealthPage";
 import TicketDetailPage from "./pages/TicketDetailPage";
 import TicketEditPage from "./pages/TicketEditPage";
@@ -10,10 +11,13 @@ import TicketSetupPage from "./pages/TicketSetupPage";
 import TicketsListPage from "./pages/TicketsListPage";
 import { tokens } from "./components/ui";
 
+// The dashboard is where a shift starts, so it takes the landing slot; health
+// keeps its page, just no longer at the root.
 const NAV = [
-  { to: "/", label: "Health" },
+  { to: "/dashboard", label: "Dashboard" },
   { to: "/customers", label: "Customers" },
   { to: "/tickets", label: "Tickets" },
+  { to: "/health", label: "Health" },
 ];
 
 function Nav() {
@@ -31,8 +35,7 @@ function Nav() {
     >
       <strong style={{ marginRight: "0.5rem" }}>CRM</strong>
       {NAV.map((item) => {
-        const active =
-          item.to === "/" ? pathname === "/" : pathname.startsWith(item.to);
+        const active = pathname.startsWith(item.to);
         return (
           <Link
             key={item.to}
@@ -57,7 +60,9 @@ export default function App() {
     <>
       <Nav />
       <Routes>
-        <Route path="/" element={<HealthPage />} />
+        <Route path="/" element={<Navigate to="/dashboard" replace />} />
+        <Route path="/dashboard" element={<DashboardPage />} />
+        <Route path="/health" element={<HealthPage />} />
         <Route path="/customers" element={<CustomersListPage />} />
         <Route path="/customers/new" element={<CustomerEditPage />} />
         <Route path="/customers/:id" element={<CustomerDetailPage />} />

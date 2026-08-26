@@ -3,12 +3,15 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 
 import { deleteTicket, getTicket } from "../api/tickets";
 import MessagesPanel from "../components/ticket/MessagesPanel";
+import NotesThreadPanel from "../components/ticket/NotesThreadPanel";
 import TicketHistoryPanel from "../components/ticket/TicketHistoryPanel";
 import TicketWorkflowPanel from "../components/ticket/TicketWorkflowPanel";
 import { ErrorBanner, Loading, StatusBadge, formatDateTime, styles, tokens } from "../components/ui";
 import type { TicketDetail } from "../types/ticket";
 
-const TABS = ["Overview", "Workflow", "Messages", "History"] as const;
+// "Notes" sits next to "Messages" deliberately: same ticket, two audiences —
+// the customer thread and the internal one.
+const TABS = ["Overview", "Workflow", "Messages", "Notes", "History"] as const;
 type Tab = (typeof TABS)[number];
 
 export default function TicketDetailPage() {
@@ -168,7 +171,9 @@ export default function TicketDetailPage() {
 
         {tab === "Workflow" && <TicketWorkflowPanel ticket={ticket} onChanged={() => void load()} />}
 
-        {tab === "Messages" && <MessagesPanel ticketId={id} />}
+        {tab === "Messages" && <MessagesPanel ticketId={id} ticket={ticket} />}
+
+        {tab === "Notes" && <NotesThreadPanel ticketId={id} />}
 
         {tab === "History" && <TicketHistoryPanel ticketId={id} />}
       </div>

@@ -16,6 +16,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
 
+from app.api.deps import OptionalAgent
 from app.db.session import get_db
 from app.schemas.channel import (
     ChannelInboundPayload,
@@ -71,14 +72,24 @@ def list_ticket_messages(
     status_code=status.HTTP_201_CREATED,
 )
 def send_ticket_message(
-    ticket_id: uuid.UUID, payload: ChannelMessageCreate, db: DbDep
+    ticket_id: uuid.UUID,
+    payload: ChannelMessageCreate,
+    db: DbDep,
+    agent: OptionalAgent,
 ) -> ChannelMessageRead:
     """Send an outbound reply on one of the ticket's channels.
 
     201 even when the send fails: the message row was created, and its
     ``status``/``error_reason`` carry the delivery outcome.
+
+    ``X-Agent-Id`` is optional and does not touch the send DTO — it only names
+    the actor on the resulting team-activity entry.
     """
-    return ChannelMessageRead.model_validate(svc.enqueue_outbound(db, ticket_id, payload))
+    return ChannelMessageRead.model_validate(
+        svc.enqueue_outbound(
+            db, ticket_id, payload, actor_agent_id=agent.id if agent else None
+        )
+    )
 
 
 # --------------------------------------------------------------------------- #

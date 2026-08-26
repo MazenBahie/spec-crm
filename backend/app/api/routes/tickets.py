@@ -12,7 +12,9 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Query, Response, status
 from sqlalchemy.orm import Session
 
+from app.api.deps import CurrentAgent, OptionalAgent
 from app.db.session import get_db
+from app.schemas.agent import TicketNoteCreate, TicketNoteRead
 from app.schemas.customer import Page
 from app.schemas.ticket import (
     AgentCreate,
@@ -33,6 +35,7 @@ from app.schemas.ticket import (
     TicketStatusChange,
     TicketUpdate,
 )
+from app.services import ticket_notes as notes_svc
 from app.services import tickets as svc
 
 router = APIRouter(tags=["tickets"])
@@ -97,14 +100,30 @@ def delete_ticket(ticket_id: uuid.UUID, db: DbDep) -> Response:
 
 @router.post("/tickets/{ticket_id}/status", response_model=TicketRead)
 def change_ticket_status(
-    ticket_id: uuid.UUID, payload: TicketStatusChange, db: DbDep
+    ticket_id: uuid.UUID, payload: TicketStatusChange, db: DbDep, agent: OptionalAgent
 ) -> TicketRead:
-    return TicketRead.model_validate(svc.change_status(db, ticket_id, payload))
+    """Move a ticket through the workflow.
+
+    ``X-Agent-Id`` is optional here — this route predates agent context and
+    stays open. Supplying it only names the actor in the team activity feed.
+    """
+    return TicketRead.model_validate(
+        svc.change_status(
+            db, ticket_id, payload, actor_agent_id=agent.id if agent else None
+        )
+    )
 
 
 @router.post("/tickets/{ticket_id}/assignment", response_model=TicketRead)
-def assign_ticket(ticket_id: uuid.UUID, payload: TicketAssignment, db: DbDep) -> TicketRead:
-    return TicketRead.model_validate(svc.assign_ticket(db, ticket_id, payload))
+def assign_ticket(
+    ticket_id: uuid.UUID, payload: TicketAssignment, db: DbDep, agent: OptionalAgent
+) -> TicketRead:
+    """(Re)assign a ticket. ``X-Agent-Id`` is optional, as on the status route."""
+    return TicketRead.model_validate(
+        svc.assign_ticket(
+            db, ticket_id, payload, actor_agent_id=agent.id if agent else None
+        )
+    )
 
 
 @router.post("/tickets/{ticket_id}/escalate", response_model=TicketRead)
@@ -139,6 +158,47 @@ def add_ticket_comment(
     ticket_id: uuid.UUID, payload: TicketCommentCreate, db: DbDep
 ) -> TicketEventRead:
     return TicketEventRead.model_validate(svc.add_comment(db, ticket_id, payload))
+
+
+# --------------------------------------------------------------------------- #
+# Internal notes (agent-only — never delivered to the customer)
+#
+# Unlike the rest of this router these two require a valid X-Agent-Id: a note
+# has an author, and "who said this" is the point of an internal thread.
+# --------------------------------------------------------------------------- #
+@router.get("/tickets/{ticket_id}/notes", response_model=Page[TicketNoteRead])
+def list_ticket_notes(
+    ticket_id: uuid.UUID,
+    db: DbDep,
+    agent: CurrentAgent,
+    limit: Annotated[int, Query(ge=1, le=200)] = 200,
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> Page[TicketNoteRead]:
+    items, total = notes_svc.list_notes(db, ticket_id, limit=limit, offset=offset)
+    return Page[TicketNoteRead](items=[_note_out(n) for n in items], total=total)
+
+
+@router.post(
+    "/tickets/{ticket_id}/notes",
+    response_model=TicketNoteRead,
+    status_code=status.HTTP_201_CREATED,
+)
+def add_ticket_note(
+    ticket_id: uuid.UUID, payload: TicketNoteCreate, db: DbDep, agent: CurrentAgent
+) -> TicketNoteRead:
+    """Post an internal note.
+
+    Notes live in their own table and no channel driver is reachable from this
+    path, so there is no way for one to leave the building.
+    """
+    return _note_out(notes_svc.add_note(db, ticket_id, agent.id, payload))
+
+
+def _note_out(note) -> TicketNoteRead:
+    """Flatten the author relationship so the thread renders without a lookup."""
+    out = TicketNoteRead.model_validate(note)
+    out.author_display_name = note.author.display_name if note.author else None
+    return out
 
 
 # --------------------------------------------------------------------------- #

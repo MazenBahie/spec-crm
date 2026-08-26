@@ -4,6 +4,8 @@ import { describe, expect, it, vi } from "vitest";
 
 import MessagesPanel from "../MessagesPanel";
 import type { Channel, ChannelMessage, ChannelSlug } from "../../../types/channel";
+import type { QuickReply } from "../../../types/agent";
+import type { TicketDetail } from "../../../types/ticket";
 
 const TICKET_ID = "44444444-4444-4444-8444-444444444444";
 
@@ -49,6 +51,51 @@ interface Recorded {
   body: unknown;
 }
 
+function quickReply(overrides: Partial<QuickReply> = {}): QuickReply {
+  return {
+    id: crypto.randomUUID(),
+    scope: "team",
+    owner_agent_id: null,
+    shortcut: null,
+    title: "Greeting",
+    body: "Hi {{customer.first_name}}, about {{ticket.reference}}.",
+    created_at: "2026-01-01T00:00:00Z",
+    updated_at: "2026-01-01T00:00:00Z",
+    ...overrides,
+  };
+}
+
+/** Enough of a loaded ticket for the picker to expand its tokens against. */
+function ticketDetail(): TicketDetail {
+  return {
+    id: TICKET_ID,
+    reference: "TCK-44444444",
+    customer_id: crypto.randomUUID(),
+    category_id: null,
+    assignee_id: null,
+    subject: "Cannot log in",
+    description: "",
+    status: "open",
+    priority: "normal",
+    escalation_level: 0,
+    escalated_at: null,
+    due_at: null,
+    resolved_at: null,
+    closed_at: null,
+    created_at: "2026-01-01T00:00:00Z",
+    updated_at: "2026-01-01T00:00:00Z",
+    is_overdue: false,
+    customer: {
+      id: crypto.randomUUID(),
+      display_name: "Ali Hassan",
+      company: null,
+      status: "active",
+    },
+    category: null,
+    assignee: null,
+  };
+}
+
 /**
  * Route GET /channels to the catalogue, GET .../messages to `thread`, and
  * POST .../messages to `sent` — mirroring the backend, which answers 201 even
@@ -56,10 +103,15 @@ interface Recorded {
  */
 function mockApi(
   thread: ChannelMessage[],
-  options: { catalogue?: Channel[]; sent?: ChannelMessage } = {},
+  options: {
+    catalogue?: Channel[];
+    sent?: ChannelMessage;
+    quickReplies?: QuickReply[];
+  } = {},
 ) {
   const requests: Recorded[] = [];
   const catalogue = options.catalogue ?? channels();
+  const quickReplies = options.quickReplies ?? [];
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     const method = (init?.method ?? "GET").toUpperCase();
@@ -71,6 +123,7 @@ function mockApi(
         headers: { "Content-Type": "application/json" },
       });
 
+    if (url.includes("/quick-replies")) return json(quickReplies);
     if (url.includes("/channels")) return json(catalogue);
     if (method === "POST") {
       const sent =
@@ -249,6 +302,72 @@ describe("MessagesPanel", () => {
     await user.type(screen.getByLabelText("Message body"), "   ");
     expect(screen.getByRole("button", { name: "Send" })).toBeDisabled();
     expect(requests.some((r) => r.method === "POST")).toBe(false);
+  });
+
+  it("offers the quick-reply picker above the composer", async () => {
+    mockApi([], { quickReplies: [quickReply()] });
+
+    render(<MessagesPanel ticketId={TICKET_ID} ticket={ticketDetail()} />);
+    await screen.findByText("No messages on this ticket yet.");
+
+    expect(screen.getByRole("button", { name: /Quick reply/ })).toBeInTheDocument();
+  });
+
+  it("inserts a rendered quick reply into the composer", async () => {
+    mockApi([], { quickReplies: [quickReply({ title: "Greeting" })] });
+    const user = userEvent.setup();
+
+    render(<MessagesPanel ticketId={TICKET_ID} ticket={ticketDetail()} />);
+    await screen.findByText("No messages on this ticket yet.");
+
+    await user.click(screen.getByRole("button", { name: /Quick reply/ }));
+    await user.click(await screen.findByRole("option", { name: /Greeting/ }));
+
+    // Tokens expanded against the loaded ticket and its customer.
+    expect(screen.getByLabelText("Message body")).toHaveValue(
+      "Hi Ali, about TCK-44444444.",
+    );
+  });
+
+  it("sends an inserted quick reply through the unchanged send API", async () => {
+    const requests = mockApi([], {
+      quickReplies: [quickReply({ title: "Greeting" })],
+      sent: message({ direction: "outbound", status: "sent" }),
+    });
+    const user = userEvent.setup();
+
+    render(<MessagesPanel ticketId={TICKET_ID} ticket={ticketDetail()} />);
+    await screen.findByText("No messages on this ticket yet.");
+
+    await user.click(screen.getByRole("button", { name: /Quick reply/ }));
+    await user.click(await screen.findByRole("option", { name: /Greeting/ }));
+    await user.click(screen.getByRole("button", { name: "Send" }));
+
+    await waitFor(() => expect(requests.some((r) => r.method === "POST")).toBe(true));
+    const posted = requests.find((r) => r.method === "POST")!;
+    // The DTO is exactly what it was before quick replies existed: the
+    // rendered text goes out as a plain body, with no extra fields.
+    expect(posted.body).toEqual({
+      channel_slug: "email",
+      body: "Hi Ali, about TCK-44444444.",
+    });
+  });
+
+  it("leaves tokens literal when no ticket has been passed in", async () => {
+    mockApi([], { quickReplies: [quickReply({ title: "Greeting" })] });
+    const user = userEvent.setup();
+
+    // The composer still works without ticket context — the picker degrades
+    // rather than disappearing.
+    render(<MessagesPanel ticketId={TICKET_ID} />);
+    await screen.findByText("No messages on this ticket yet.");
+
+    await user.click(screen.getByRole("button", { name: /Quick reply/ }));
+    await user.click(await screen.findByRole("option", { name: /Greeting/ }));
+
+    expect(screen.getByLabelText("Message body")).toHaveValue(
+      "Hi {{customer.first_name}}, about {{ticket.reference}}.",
+    );
   });
 
   it("surfaces an API error from the initial load", async () => {

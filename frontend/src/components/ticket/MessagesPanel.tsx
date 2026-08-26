@@ -1,11 +1,17 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { listChannels, listTicketMessages, sendTicketMessage } from "../../api/channels";
+import QuickReplyPicker from "../dashboard/QuickReplyPicker";
 import type { Channel, ChannelMessage, ChannelSlug, MessageStatus } from "../../types/channel";
+import type { TicketDetail } from "../../types/ticket";
 import { ErrorBanner, Loading, formatDateTime, styles, tokens } from "../ui";
 
 interface Props {
   ticketId: string;
+  /** Supplies `{{ticket.*}}` and `{{customer.*}}` values to the quick-reply
+   * picker. Optional — without it those tokens stay literal rather than the
+   * composer disappearing. */
+  ticket?: TicketDetail | null;
 }
 
 /** `failed` is the expected outcome until an adapter story lands, so it reads
@@ -31,7 +37,7 @@ function StatusPill({ status }: { status: MessageStatus }) {
   );
 }
 
-export default function MessagesPanel({ ticketId }: Props) {
+export default function MessagesPanel({ ticketId, ticket = null }: Props) {
   const [messages, setMessages] = useState<ChannelMessage[]>([]);
   const [channels, setChannels] = useState<Channel[]>([]);
   const [slug, setSlug] = useState<ChannelSlug | "">("");
@@ -39,6 +45,7 @@ export default function MessagesPanel({ ticketId }: Props) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const bodyRef = useRef<HTMLTextAreaElement>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -150,7 +157,16 @@ export default function MessagesPanel({ ticketId }: Props) {
             </option>
           ))}
         </select>
+        <div style={{ ...styles.row, marginTop: "0.5rem" }}>
+          <QuickReplyPicker
+            textareaRef={bodyRef}
+            value={body}
+            onChange={setBody}
+            context={{ ticket: ticket ?? undefined, customer: ticket?.customer }}
+          />
+        </div>
         <textarea
+          ref={bodyRef}
           aria-label="Message body"
           placeholder="Write a reply…"
           rows={3}

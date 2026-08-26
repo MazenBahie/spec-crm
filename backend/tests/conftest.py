@@ -142,6 +142,34 @@ def inactive_agent(client: TestClient) -> dict:
 
 
 @pytest.fixture()
+def other_agent(client: TestClient) -> dict:
+    """A second active agent, for "not yours" and mention assertions."""
+    res = client.post(
+        "/api/agents", json={"display_name": "Omar Night", "email": "omar@crm.test"}
+    )
+    assert res.status_code == 201, res.text
+    return res.json()
+
+
+@pytest.fixture()
+def agent_client(app: FastAPI, agent: dict) -> Iterator[TestClient]:
+    """A client that identifies as `agent` on every request.
+
+    Separate from `client` on purpose: the pre-existing routers are still
+    unauthenticated, and their tests must keep proving that.
+    """
+    with TestClient(app, headers={"X-Agent-Id": agent["id"]}) as test_client:
+        yield test_client
+
+
+@pytest.fixture()
+def other_agent_client(app: FastAPI, other_agent: dict) -> Iterator[TestClient]:
+    """A client that identifies as `other_agent`."""
+    with TestClient(app, headers={"X-Agent-Id": other_agent["id"]}) as test_client:
+        yield test_client
+
+
+@pytest.fixture()
 def ticket_category(client: TestClient) -> dict:
     """One active category with a non-default priority, to prove inheritance."""
     res = client.post(

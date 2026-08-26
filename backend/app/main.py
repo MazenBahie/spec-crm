@@ -2,9 +2,17 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.api.routes import channels, customers, health, tickets
+from app.api.routes import (
+    channels,
+    customers,
+    dashboard,
+    health,
+    quick_replies,
+    tasks,
+    tickets,
+)
 from app.core.config import settings
-from app.services.errors import Conflict, NotFound, PayloadTooLarge
+from app.services.errors import Conflict, Forbidden, NotFound, PayloadTooLarge
 
 
 def create_app() -> FastAPI:
@@ -19,6 +27,13 @@ def create_app() -> FastAPI:
     app.include_router(customers.router, prefix=settings.api_prefix)
     app.include_router(tickets.router, prefix=settings.api_prefix)
     app.include_router(channels.router, prefix=settings.api_prefix)
+    # Agent-scoped routers. Each declares Depends(get_current_agent) at router
+    # level, so every route below is 401 without a valid X-Agent-Id. /health and
+    # the pre-existing routers stay open — real auth is a follow-up story that
+    # will gate them all at once.
+    app.include_router(dashboard.router, prefix=settings.api_prefix)
+    app.include_router(tasks.router, prefix=settings.api_prefix)
+    app.include_router(quick_replies.router, prefix=settings.api_prefix)
     register_exception_handlers(app)
     return app
 
@@ -33,6 +48,7 @@ def register_exception_handlers(app: FastAPI) -> None:
         return handler
 
     app.add_exception_handler(NotFound, _error(404))
+    app.add_exception_handler(Forbidden, _error(403))
     app.add_exception_handler(Conflict, _error(409))
     app.add_exception_handler(PayloadTooLarge, _error(413))
 

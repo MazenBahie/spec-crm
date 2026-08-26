@@ -26,6 +26,7 @@ from app.schemas.channel import (
     ChannelMessageCreate,
     ChannelUpdate,
 )
+from app.services import activity
 from app.services.channels.registry import get_driver
 from app.services.errors import Conflict, NotFound, ServiceError
 from app.services.tickets import get_ticket
@@ -93,7 +94,11 @@ def list_messages_for_ticket(
 
 
 def enqueue_outbound(
-    db: Session, ticket_id: uuid.UUID, payload: ChannelMessageCreate
+    db: Session,
+    ticket_id: uuid.UUID,
+    payload: ChannelMessageCreate,
+    *,
+    actor_agent_id: uuid.UUID | None = None,
 ) -> ChannelMessage:
     """Persist an outbound message, then try to send it.
 
@@ -101,6 +106,10 @@ def enqueue_outbound(
     raises — the expected outcome for every channel until its adapter story
     lands — still leaves an auditable attempt behind, marked ``failed`` with the
     reason the caller can read straight back off the response.
+
+    ``actor_agent_id`` only decides who the team feed credits for the reply. It
+    is optional, and the send DTO is unchanged: this route stays callable
+    without agent context, and the feed then records the reply with no actor.
     """
     ticket = get_ticket(db, ticket_id)
     channel = _get_enabled_channel(db, payload.channel_slug)
@@ -136,6 +145,21 @@ def enqueue_outbound(
     else:
         message.status = result.status
         message.provider_message_id = result.provider_message_id
+
+    # Recorded whatever the delivery outcome: "Omar tried to reply on #145 and
+    # it bounced" is exactly the kind of thing a teammate needs to see.
+    activity.record(
+        db,
+        event_type="ticket.replied",
+        agent_id=actor_agent_id,
+        ticket_id=ticket.id,
+        customer_id=ticket.customer_id,
+        payload={
+            "channel": channel.slug,
+            "status": message.status,
+            "reference": ticket.reference,
+        },
+    )
 
     db.flush()
     db.refresh(message)

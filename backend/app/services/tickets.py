@@ -22,6 +22,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.models.ticket import (
     TICKET_PRIORITIES,
+    TICKET_STATUSES,
     Agent,
     Ticket,
     TicketCategory,
@@ -39,10 +40,19 @@ from app.schemas.ticket import (
     TicketStatusChange,
     TicketUpdate,
 )
+from app.services import activity
 from app.services.customers import _require_active, get_customer
 from app.services.errors import Conflict, NotFound
 
 MAX_ESCALATION_LEVEL = 3
+
+# The terminal pair, matching Ticket.is_terminal. "In an agent's queue" is
+# everything else, derived rather than listed again so a status added later
+# counts as open until someone says otherwise.
+TERMINAL_STATUSES: tuple[str, ...] = ("resolved", "closed")
+OPEN_STATUSES: tuple[str, ...] = tuple(
+    status for status in TICKET_STATUSES if status not in TERMINAL_STATUSES
+)
 
 # Permitted status moves. A move not listed here (including onto the current
 # status, handled separately) is rejected with 409.
@@ -76,6 +86,26 @@ def build_reference(ticket_id: uuid.UUID) -> str:
 
 def _stringify(value: object) -> str | None:
     return None if value is None else str(value)
+
+
+def priority_rank():
+    """SQL expression ranking `tickets.priority` low(0) → urgent(3).
+
+    Postgres would sort the `priority` enum column by declaration order, but
+    SQLite stores it as VARCHAR and would sort alphabetically — so every
+    priority ordering in the codebase goes through this CASE, not the raw
+    column.
+
+    Compares `Ticket.priority` via `==` rather than a dict-form CASE so
+    SQLAlchemy binds each literal with the column's own type. A dict-form CASE
+    casts its bind params as VARCHAR, which Postgres refuses to compare against
+    an enum column ("operator does not exist: ticket_priority = character
+    varying") even though SQLite's untyped columns accept it.
+    """
+    return case(
+        *[(Ticket.priority == value, index) for value, index in _PRIORITY_ORDER.items()],
+        else_=0,
+    )
 
 
 def _record(
@@ -228,10 +258,7 @@ def list_tickets(
 ) -> tuple[list[Ticket], int]:
     """Return one page of tickets plus the total matching the filters.
 
-    Ordered urgent-first then newest-first. Postgres would sort the `priority`
-    enum column by declaration order, but SQLite stores it as VARCHAR and
-    would sort alphabetically — so priority order is a CASE expression, not
-    the raw column, to keep the two dialects consistent.
+    Ordered urgent-first then newest-first, via :func:`priority_rank`.
     """
     filters = []
     if q and q.strip():
@@ -256,21 +283,11 @@ def list_tickets(
     if unassigned:
         filters.append(Ticket.assignee_id.is_(None))
 
-    # Compare Ticket.priority (a native Postgres enum) via `==`, not a dict-form
-    # CASE, so SQLAlchemy binds each literal with the column's own type. A
-    # dict-form CASE casts its bind params as VARCHAR, which Postgres refuses
-    # to compare against an enum column ("operator does not exist: ticket_priority
-    # = character varying") even though SQLite's untyped columns accept it.
-    priority_rank = case(
-        *[(Ticket.priority == value, index) for value, index in _PRIORITY_ORDER.items()],
-        else_=0,
-    )
-
     total = db.scalar(select(func.count()).select_from(Ticket).where(*filters)) or 0
     rows = db.scalars(
         select(Ticket)
         .where(*filters)
-        .order_by(priority_rank.desc(), Ticket.created_at.desc())
+        .order_by(priority_rank().desc(), Ticket.created_at.desc())
         .limit(limit)
         .offset(offset)
     ).all()
@@ -351,6 +368,19 @@ def create_ticket(db: Session, payload: TicketCreate) -> Ticket:
     _record(db, ticket, "created", actor=None)
     if assignee is not None:
         _record(db, ticket, "assigned", field="assignee_id", new_value=assignee.id)
+        # A ticket created already assigned is still an assignment, and the
+        # assignee should hear about it the same way they would a hand-over.
+        activity.record(
+            db,
+            event_type="ticket.assigned",
+            ticket_id=ticket.id,
+            customer_id=ticket.customer_id,
+            payload={
+                "from": None,
+                "to": _stringify(assignee.id),
+                "reference": ticket.reference,
+            },
+        )
 
     db.flush()
     db.refresh(ticket)
@@ -388,8 +418,19 @@ def update_ticket(db: Session, ticket_id: uuid.UUID, payload: TicketUpdate) -> T
 
 
 def change_status(
-    db: Session, ticket_id: uuid.UUID, payload: TicketStatusChange
+    db: Session,
+    ticket_id: uuid.UUID,
+    payload: TicketStatusChange,
+    *,
+    actor_agent_id: uuid.UUID | None = None,
 ) -> Ticket:
+    """Move a ticket through the workflow.
+
+    ``actor_agent_id`` is who to credit in the team activity feed, and is
+    optional because this route predates the agent-context dependency and stays
+    callable without one — the event is then recorded with no actor rather than
+    not recorded at all.
+    """
     ticket = get_ticket(db, ticket_id)
     current = ticket.status
     target = payload.status
@@ -416,6 +457,14 @@ def change_status(
         old_value=current, new_value=target,
         comment=payload.comment, actor=payload.actor,
     )
+    activity.record(
+        db,
+        event_type="ticket.status_changed",
+        agent_id=actor_agent_id,
+        ticket_id=ticket.id,
+        customer_id=ticket.customer_id,
+        payload={"from": current, "to": target, "reference": ticket.reference},
+    )
 
     db.flush()
     db.refresh(ticket)
@@ -423,8 +472,13 @@ def change_status(
 
 
 def assign_ticket(
-    db: Session, ticket_id: uuid.UUID, payload: TicketAssignment
+    db: Session,
+    ticket_id: uuid.UUID,
+    payload: TicketAssignment,
+    *,
+    actor_agent_id: uuid.UUID | None = None,
 ) -> Ticket:
+    """(Re)assign a ticket. See :func:`change_status` on ``actor_agent_id``."""
     ticket = get_ticket(db, ticket_id)
     if ticket.is_terminal:
         raise Conflict("cannot reassign a resolved or closed ticket")
@@ -445,6 +499,23 @@ def assign_ticket(
         db, ticket, event_type, field="assignee_id",
         old_value=old_assignee_id, new_value=new_assignee_id,
         actor=payload.actor,
+    )
+    # One feed event covers both directions — "took #145" and "released #145"
+    # are the same kind of news to the team; the payload says which.
+    activity.record(
+        db,
+        event_type="ticket.assigned",
+        agent_id=actor_agent_id,
+        ticket_id=ticket.id,
+        customer_id=ticket.customer_id,
+        payload={
+            "from": _stringify(old_assignee_id),
+            "to": _stringify(new_assignee_id),
+            "reference": ticket.reference,
+        },
+        # No mention row: the new assignee already sees this through the feed's
+        # assignee rule, and `unread_mentions` is meant to count someone
+        # deliberately naming you, not every routine queue move.
     )
 
     db.flush()

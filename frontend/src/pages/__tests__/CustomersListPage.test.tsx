@@ -6,6 +6,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import CustomersListPage from "../CustomersListPage";
 import type { Customer } from "../../types/customer";
 
+/** Mirrors SEARCH_DEBOUNCE_MS in CustomersListPage. */
+const SEARCH_DEBOUNCE_MS = 300;
+
 function customer(overrides: Partial<Customer> = {}): Customer {
   return {
     id: crypto.randomUUID(),
@@ -146,6 +149,12 @@ describe("CustomersListPage", () => {
 
     expect(screen.getByText("Page 1 of 2")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Previous" })).toBeDisabled();
+
+    // Let the search debounce that was armed on mount fire before paging. It
+    // resets `offset` to 0, so a click landing inside that 300ms window is
+    // undone a moment later — on a loaded machine, this test would otherwise
+    // fail intermittently.
+    await new Promise((resolve) => setTimeout(resolve, SEARCH_DEBOUNCE_MS + 50));
 
     await user.click(screen.getByRole("button", { name: "Next" }));
 

@@ -6,6 +6,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import TicketsListPage from "../TicketsListPage";
 import type { Ticket } from "../../types/ticket";
 
+/** Mirrors SEARCH_DEBOUNCE_MS in TicketsListPage. */
+const SEARCH_DEBOUNCE_MS = 300;
+
 function ticket(overrides: Partial<Ticket> = {}): Ticket {
   return {
     id: crypto.randomUUID(),
@@ -161,6 +164,11 @@ describe("TicketsListPage", () => {
 
     expect(screen.getByText("Page 1 of 2")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Previous" })).toBeDisabled();
+
+    // Let the search debounce armed on mount fire before paging. It resets
+    // `offset` to 0, so a click landing inside that 300ms window is undone a
+    // moment later — on a loaded machine this would fail intermittently.
+    await new Promise((resolve) => setTimeout(resolve, SEARCH_DEBOUNCE_MS + 50));
 
     await user.click(screen.getByRole("button", { name: "Next" }));
 

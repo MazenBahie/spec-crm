@@ -1,5 +1,7 @@
 /** Shared fetch helpers. All calls go to `/api`, proxied by Vite in dev. */
 
+import { agentHeaders, clearAgentId } from "./agentContext";
+
 export const API_BASE = "/api";
 
 export class ApiError extends Error {
@@ -31,14 +33,23 @@ async function toApiError(res: Response): Promise<ApiError> {
 }
 
 export async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  // `X-Agent-Id` rides along on every call. The agent-scoped routes require it;
+  // the older ones ignore it, except for the few that use it to name the actor
+  // on an activity-feed entry.
+  const identity = agentHeaders();
   const res = await fetch(`${API_BASE}${path}`, {
     ...init,
     headers:
       init?.body instanceof FormData
-        ? init.headers
-        : { "Content-Type": "application/json", ...(init?.headers ?? {}) },
+        ? { ...identity, ...(init.headers ?? {}) }
+        : { "Content-Type": "application/json", ...identity, ...(init?.headers ?? {}) },
   });
 
+  if (res.status === 401) {
+    // The stored agent is gone, deactivated, or was never valid. Drop it so the
+    // dashboard asks again instead of retrying a request that cannot succeed.
+    clearAgentId();
+  }
   if (!res.ok) throw await toApiError(res);
   if (res.status === 204) return undefined as T;
   return (await res.json()) as T;

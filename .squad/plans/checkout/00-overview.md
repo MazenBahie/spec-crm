@@ -10,6 +10,7 @@ Entry point for the **checkout** feature. Stories execute in order by their `NN`
 | 02 | `02-story-customer-management.md` | Customer Management | customer-management | 01 |
 | 03 | `03-story-ticket-management.md` | Ticket Management | ticket-management | 01, 02 |
 | 04 | `04-story-communication-channels.md` | Communication Channels | communication-channels | 01, 02, 03 |
+| 05 | `05-story-agent-dashboard.md` | Agent Dashboard | agent-dashboard | 01, 02, 03, 04 |
 
 ## Dependency notes
 
@@ -27,6 +28,11 @@ Strictly sequential — each story assumes the previous one is merged.
   - `app/services/channels/service.py` reuses `get_ticket` from `app/services/tickets.py` for its 404 semantics.
   - The Alembic chain stays linear: `0003_communication_channels` sets `down_revision = '0002'`.
   - The frontend adds a **Messages** tab to `TicketDetailPage` alongside Workflow and History.
+- **01–04 → 05.** Story 05 is the first agent-facing story, and depends on all four:
+  - The `agents` table from Story 03 is reused as-is, **not** recreated. `0004` only hangs `agent_tasks`, `quick_replies`, `ticket_notes`, `activity_events` and `activity_event_mentions` off it, and `down_revision = '0003'` keeps the chain linear.
+  - `list_my_queue` reuses `priority_rank()`, extracted from `list_tickets` in `app/services/tickets.py`, so both order priority through the same CASE.
+  - `app/services/tickets.py` and `app/services/channels/service.py` call `activity.record(...)` after assignment, status change and reply. Each takes a new **optional** `actor_agent_id` keyword, so both routes stay callable without agent context.
+  - The frontend reuses `api/client.ts` (which now forwards `X-Agent-Id`), `components/ui.tsx`, and adds a **Notes** tab to `TicketDetailPage`.
 
 ## Shared contracts to respect
 
@@ -41,4 +47,10 @@ Strictly sequential — each story assumes the previous one is merged.
 
 ## Known cross-story gap
 
-No authentication exists yet. Story 02 models `Interaction.author` as free text and Story 03 introduces a standalone `agents` table for assignment. **A future auth story must reconcile both** with real users, including a migration for existing `tickets.assignee_id` values.
+No authentication exists yet. Story 02 models `Interaction.author` as free text, Story 03 introduces a standalone `agents` table for assignment, and Story 05 adds an `X-Agent-Id` header (`backend/app/api/deps.py`, `frontend/src/api/agentContext.ts`) that is **trusted outright** — anyone who knows an agent's uuid is that agent.
+
+**A future auth story must reconcile all three** with real users, including a migration for existing `tickets.assignee_id` values. It should also:
+
+- Gate the pre-existing routers, which Story 05 deliberately left open so its regression suite kept proving they work unauthenticated.
+- Replace `unread_mentions`, currently approximated as "mentions in the last 7 days" (`activity.MENTION_WINDOW_DAYS`) because there is no per-agent read cursor.
+- Give agents a timezone. `tasks_due_today` counts a UTC day while the frontend renders local time, so the two can disagree either side of midnight.
