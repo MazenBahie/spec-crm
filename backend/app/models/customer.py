@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
+from typing import TYPE_CHECKING
 
 from sqlalchemy import (
     DateTime,
@@ -26,6 +27,9 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
+
+if TYPE_CHECKING:
+    from app.models.ticket import Ticket
 
 CUSTOMER_STATUSES = ("active", "archived")
 CONTACT_KINDS = ("phone", "email", "address", "other")
@@ -73,6 +77,9 @@ class Customer(Base):
         back_populates="customer", cascade="all, delete-orphan", passive_deletes=True
     )
     attachments: Mapped[list[Attachment]] = relationship(
+        back_populates="customer", cascade="all, delete-orphan", passive_deletes=True
+    )
+    tickets: Mapped[list[Ticket]] = relationship(
         back_populates="customer", cascade="all, delete-orphan", passive_deletes=True
     )
 

@@ -4,4 +4,4 @@ One row per feature folder under `.squad/plans/`. `NN` continues as a global exe
 
 | Feature | Overview | NN range |
 |---------|----------|----------|
-| _add rows per feature_ |
+| checkout | [checkout/00-overview.md](checkout/00-overview.md) | 01–04 |

@@ -6,10 +6,39 @@ Entry point for the **checkout** feature. Stories execute in order by their `NN`
 
 | NN | File | Title | Tracker id | Depends on |
 |----|------|-------|------------|------------|
-| _add rows as stories are planned_ |
 | 01 | `01-story-project-init-and-structure.md` | Project init and structure | project-init-and-structure | — |
-| 02 | `02-story-customer-management.md` | Customer Management | customer-management | — |
+| 02 | `02-story-customer-management.md` | Customer Management | customer-management | 01 |
+| 03 | `03-story-ticket-management.md` | Ticket Management | ticket-management | 01, 02 |
+| 04 | `04-story-communication-channels.md` | Communication Channels | communication-channels | 01, 02, 03 |
 
 ## Dependency notes
 
-_Describe sequencing, shared contracts, or cross-feature dependencies here._
+Strictly sequential — each story assumes the previous one is merged.
+
+- **01 → 02.** Story 02 builds on the backend layering, the `get_db` session dependency, and the Vite/React shell created in Story 01.
+- **02 → 03.** Story 03 depends on Story 02 for concrete shared contracts, not just convention:
+  - `tickets.customer_id` is a FK to `customers.id` with `ON DELETE CASCADE`, and `Customer` gains a `tickets` relationship.
+  - `create_ticket` reuses `_require_active` from `app/services/customers.py` to refuse tickets on archived customers.
+  - `TicketDetailRead` embeds `CustomerRead` from `app/schemas/customer.py`.
+  - The Alembic chain is linear: `0002_ticket_management` sets `down_revision = '0001'`.
+  - The frontend reuses `api/client.ts` (`request`, `buildQuery`), `components/ui.tsx`, and the router introduced in Story 02, and adds a **Tickets** tab to `CustomerDetailPage`.
+- **03 → 04.** Story 04 is the *foundation only* of Communication Channels (data model, driver interface, ticket-thread wiring); the five provider adapters are follow-up stories. It depends on Story 03 for concrete contracts:
+  - `channel_messages.ticket_id` is a FK to `tickets.id` with `ON DELETE CASCADE`, and `customer_id` is denormalised off the ticket.
+  - `app/services/channels/service.py` reuses `get_ticket` from `app/services/tickets.py` for its 404 semantics.
+  - The Alembic chain stays linear: `0003_communication_channels` sets `down_revision = '0002'`.
+  - The frontend adds a **Messages** tab to `TicketDetailPage` alongside Workflow and History.
+
+## Shared contracts to respect
+
+- **Service layer never commits.** `get_db` (`backend/app/db/session.py` lines 30–43) owns the transaction; services `flush()` only.
+- **Error mapping is centralised.** `NotFound`/`Conflict`/`PayloadTooLarge` → 404/409/413 in `backend/app/main.py` lines 33–35. Add new failure modes as `Conflict`, not as new exception types or per-route `HTTPException`s.
+- **Schema changes go in Alembic**, never in `infra/postgres/init.sql`, which stays empty by design.
+- **Named enums must be dropped explicitly in `downgrade()`** — `op.drop_table` leaves Postgres enum types behind and breaks the next `upgrade`. See `0001_customer_management.py` lines 116–120 for the pattern.
+- **Conditional indexes must set both `postgresql_where` and `sqlite_where`**, or the SQLite-backed test suite enforces a different constraint than production.
+- **Seeded reference data needs both paths.** A migration seed alone is invisible to the test suite, which builds its schema with `metadata.create_all`. Story 04 pairs the `0003` seed with an `after_create` hook on `Channel.__table__` and hard-coded row ids, so both paths produce identical rows. Alembic builds its own `Table` object, so the hook never fires during a migration.
+- **Migrations are Postgres-only.** They emit `server_default=text('now()')`, which SQLite has no function for — harmless for DDL, fatal for a migration that INSERTs. Supply such values explicitly in a seed.
+- **Ordering columns must be stamped in Python, not by the server.** SQLite's `CURRENT_TIMESTAMP` has second resolution, so rows written in one request tie and the order falls to the random uuid4 primary key. `ticket_events.created_at` and `channel_messages.created_at` both set `default=` for this reason.
+
+## Known cross-story gap
+
+No authentication exists yet. Story 02 models `Interaction.author` as free text and Story 03 introduces a standalone `agents` table for assignment. **A future auth story must reconcile both** with real users, including a migration for existing `tickets.assignee_id` values.

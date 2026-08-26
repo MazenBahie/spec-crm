@@ -5,15 +5,18 @@ import { describe, expect, it, vi } from "vitest";
 
 import App from "../App";
 
-/** Answer health and customer-list calls so both routes can render. */
+/** Answer health, list, and lookup calls so every route can render. */
 function mockBackend() {
   vi.stubGlobal(
     "fetch",
     vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
+      // Agents/categories are plain arrays; everything else paginates.
       const payload = url.includes("/health")
         ? { status: "ok" }
-        : { items: [], total: 0 };
+        : url.includes("/agents") || url.includes("/ticket-categories")
+          ? []
+          : { items: [], total: 0 };
       return new Response(JSON.stringify(payload), {
         status: 200,
         headers: { "Content-Type": "application/json" },
@@ -94,5 +97,51 @@ describe("app navigation", () => {
     mockBackend();
     renderApp("/nope");
     expect(screen.getByRole("heading", { name: "Not found" })).toBeInTheDocument();
+  });
+
+  it("exposes Tickets in the main navigation", async () => {
+    mockBackend();
+    renderApp("/");
+    await screen.findByText("CRM — System Health");
+
+    const link = screen.getByRole("link", { name: "Tickets" });
+    expect(link).toHaveAttribute("href", "/tickets");
+  });
+
+  it("navigates from / to the tickets queue via the nav link", async () => {
+    mockBackend();
+    const user = userEvent.setup();
+    renderApp("/");
+
+    await screen.findByText("CRM — System Health");
+    await user.click(screen.getByRole("link", { name: "Tickets" }));
+
+    expect(
+      await screen.findByRole("heading", { level: 1, name: "Tickets" }),
+    ).toBeInTheDocument();
+  });
+
+  it("renders the ticket create form at /tickets/new", async () => {
+    mockBackend();
+    renderApp("/tickets/new");
+
+    expect(
+      await screen.findByRole("heading", { level: 1, name: "New ticket" }),
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText("Subject (required)")).toBeInTheDocument();
+  });
+
+  it("marks Tickets as the active nav item at /tickets", async () => {
+    mockBackend();
+    renderApp("/tickets");
+
+    await screen.findByRole("heading", { level: 1, name: "Tickets" });
+    expect(screen.getByRole("link", { name: "Tickets" })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+    expect(screen.getByRole("link", { name: "Customers" })).not.toHaveAttribute(
+      "aria-current",
+    );
   });
 });

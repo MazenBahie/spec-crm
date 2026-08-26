@@ -2,9 +2,14 @@
 
 A CRM product built on FastAPI + React + Postgres.
 
-**Status:** customer management is implemented — profiles, contact details, interaction
-history, notes, and file attachments. Deals, pipelines, and authentication arrive in
-later stories.
+**Status:** customer management and ticket management are implemented — customer
+profiles, contact details, interaction history, notes, file attachments, plus tickets
+with categories, priorities, assignment, a guarded status/escalation workflow, and an
+append-only history. The communication-channel **foundation** is in place: a ticket
+accumulates inbound and outbound messages across five channels behind a driver
+interface, but **no provider adapter is written yet** — every outbound send fails by
+design until its adapter story lands (see [Communication channels](#communication-channels)).
+Deals, pipelines, and authentication arrive in later stories.
 
 ## Layout
 
@@ -13,24 +18,26 @@ backend/            FastAPI service
   app/
     main.py         app factory + CORS + router wiring + error handlers
     core/config.py  pydantic-settings (env prefix CRM_)
-    api/routes/     HTTP routes (health.py, customers.py)
+    api/routes/     HTTP routes (health.py, customers.py, tickets.py, channels.py)
     db/
       base.py       declarative Base
       session.py    lazy engine + get_db dependency
-    models/         ORM models (customer.py)
+    models/         ORM models (customer.py, ticket.py, channel.py)
     schemas/        Pydantic request/response models
     services/       business logic, attachment storage, error types
-  alembic/          migrations (versions/0001_customer_management.py)
+      channels/     channel service + driver protocol + one module per channel
+  alembic/          migrations (0001_customer_management, 0002_ticket_management,
+                    0003_communication_channels)
   tests/            pytest suite
   Dockerfile
 frontend/           React 18 + Vite + TypeScript
   src/
     main.tsx        React entry (BrowserRouter)
     App.tsx         nav + routes
-    api/            client.ts (fetch helpers) + customers.ts (endpoints)
+    api/            client.ts (fetch helpers) + customers.ts, tickets.ts, channels.ts
     types/          TypeScript mirrors of the API schemas
-    pages/          HealthPage, CustomersListPage, CustomerDetailPage, CustomerEditPage
-    components/     ui.tsx atoms + customer/ panels
+    pages/          Health/Customers*/Tickets* pages
+    components/     ui.tsx atoms + customer/ and ticket/ panels
   Dockerfile
 infra/              container topology
   docker-compose.yml
@@ -52,8 +59,9 @@ docker compose -f infra/docker-compose.yml up --build
 docker compose -f infra/docker-compose.yml exec backend alembic upgrade head
 ```
 
-Then open <http://localhost:5173> — the health page shows `status: ok`, and
-<http://localhost:5173/customers> lists the customer directory.
+Then open <http://localhost:5173> — the health page shows `status: ok`,
+<http://localhost:5173/customers> lists the customer directory, and
+<http://localhost:5173/tickets> lists the ticket queue.
 
 | Service  | URL                                   |
 | -------- | ------------------------------------- |
@@ -141,6 +149,79 @@ Behaviour worth knowing:
   **422**.
 - Concurrent `PATCH`es are last-write-wins; optimistic locking is out of scope.
 
+### Tickets
+
+| Method | Path                          | Behaviour                                        |
+| ------ | ----------------------------- | ------------------------------------------------ |
+| GET    | `/api/tickets`                | Paginated queue; `q`, `status`, `priority`, `customer_id`, `assignee_id`, `category_id`, `unassigned`, `limit`, `offset` — urgent-first, then newest-first |
+| POST   | `/api/tickets`                | Create (201); inherits the category's `default_priority` when `priority` is omitted |
+| GET    | `/api/tickets/{id}`           | Detail, including customer, category, and assignee |
+| PATCH  | `/api/tickets/{id}`           | Editable fields only — **not** `status` or `assignee_id` (see below) |
+| DELETE | `/api/tickets/{id}`           | Hard delete; cascades all history                |
+| POST   | `/api/tickets/{id}/status`    | Guarded status transition (409 on a forbidden move) |
+| POST   | `/api/tickets/{id}/assignment`| Assign/reassign/unassign (`assignee_id: null` unassigns) |
+| POST   | `/api/tickets/{id}/escalate`  | Bump escalation level, optionally raise priority  |
+| GET    | `/api/tickets/{id}/events`    | Append-only history, newest-first (no `PATCH`/`DELETE`) |
+| POST   | `/api/tickets/{id}/events`    | Add a comment (the only client-authored event)    |
+| GET    | `/api/customers/{id}/tickets` | Tickets for one customer                          |
+| GET/POST/PATCH/DELETE | `/api/ticket-categories[/{id}]` | Category CRUD; delete refused (409) while in use |
+| GET/POST/PATCH | `/api/agents[/{id}]`  | Agent CRUD; `DELETE` deactivates rather than deletes, so assignment history stays readable |
+
+Behaviour worth knowing:
+
+- **`status` and `assignee_id` are absent from the `PATCH` body on purpose** — they are
+  only mutable through their dedicated endpoints, so every change to them is guaranteed
+  to append a `ticket_events` row.
+- **Status transitions are guarded** by a permitted-move map; a forbidden move (e.g.
+  `open` → `resolved`) returns **409**. Moving to the current status is a no-op: 200, no
+  new event.
+- **Escalation** is refused past level 3 or on a resolved/closed ticket (**409**); raising
+  priority on an already-`urgent` ticket leaves it at `urgent` with no extra event.
+- **Assigning to an inactive agent** returns **409**. Deactivating an agent does not
+  unassign their open tickets — their assignment history stays intact.
+- **Deleting an in-use category** returns **409** with the referencing count.
+- Ticket references (`TCK-XXXXXXXX`) are derived from the ticket's own UUID, so they are
+  unique without a shared counter or extra locking.
+
+### Communication channels
+
+Five channels — `email`, `whatsapp`, `live_chat`, `sms`, `web_form` — form a **fixed
+catalogue**, seeded by migration `0003` with hard-coded ids. There is no create or
+delete: only `is_enabled` and the provider `config` blob are mutable, because each slug
+is what a transport driver is registered against.
+
+| Method | Path                            | Behaviour                                       |
+| ------ | ------------------------------- | ----------------------------------------------- |
+| GET    | `/api/channels`                 | The catalogue; `enabled_only` filters it        |
+| PATCH  | `/api/channels/{slug}`          | Enable/disable, or rewrite `config`             |
+| GET    | `/api/tickets/{id}/messages`    | The ticket's thread, **oldest-first**, paginated |
+| POST   | `/api/tickets/{id}/messages`    | Send an outbound reply (201)                    |
+| POST   | `/api/channels/{slug}/inbound`  | Provider webhook; takes arbitrary JSON (201)    |
+
+Behaviour worth knowing:
+
+- **No provider adapter exists yet.** Every driver under
+  `app/services/channels/` is a stub whose `send()` raises, so a `POST .../messages`
+  returns **201** with `status: "failed"` and a readable `error_reason`. That is the
+  expected state, not a bug — stories 21–25 replace one stub at a time.
+- **Sending is best-effort by design.** The row is persisted as `queued` *before* the
+  driver is called, so a transport failure is recorded on the row rather than raised.
+  A send therefore never loses the attempt, and the thread stays an honest record of
+  what was tried. Failed sends are not retried — an agent re-sends, appending a new row.
+- **An unknown slug is a 422, not a 404** — the channel set is a `Literal` in
+  `app/schemas/channel.py`, so it is rejected at the edge before any lookup.
+- **A disabled channel refuses outbound (409) but still accepts inbound.** Disabling
+  stops agents replying; a provider can still deliver a webhook for a conversation
+  already in flight, and dropping it would lose the customer's message.
+- **Inbound requires an explicit `ticket_id`.** Real routing (match by sender address,
+  thread id, or reply token) belongs with the adapter that knows its provider's shape.
+  Webhooks are also **unauthenticated and unverified** for the same reason.
+- A ticket's **primary channel** is not a stored column — it is the channel of the
+  oldest message in the thread, which is what the UI's reply box defaults to.
+- `channel_messages.created_at` is stamped in Python, not by the server: SQLite's
+  `CURRENT_TIMESTAMP` has only second resolution, which cannot order replies posted in
+  the same second. `ticket_events.created_at` does the same, for the same reason.
+
 ## Migrations
 
 Schema changes are Alembic migrations, never edits to `infra/postgres/init.sql`.
@@ -153,7 +234,12 @@ alembic revision --autogenerate -m "describe change"
 ```
 
 `downgrade` drops the tables and their named enum types, but **not** attachment files on
-disk — clean those up manually under `CRM_ATTACHMENTS_DIR`.
+disk (customer migration) or ticket history (ticket migration) — the latter is destroyed
+irrecoverably on downgrade, as is every stored channel message (channel migration).
+
+Migrations target Postgres: they emit `server_default` values such as `now()`, which
+SQLite has no function for. The seed in `0003` therefore supplies its timestamps
+explicitly rather than leaning on the column default.
 
 ## Tests
 
@@ -163,8 +249,12 @@ cd frontend && npm test         # Vitest + React Testing Library
 ```
 
 The backend suite runs against a throwaway SQLite database per test, so no Postgres is
-required. Postgres-specific behaviour (the partial unique index, named enums) is verified
-by applying the Alembic migration to the compose Postgres.
+required. Postgres-specific behaviour (the partial unique index, named enums, `JSONB`) is
+verified by applying the Alembic migration to the compose Postgres.
+
+The channel catalogue is present in both places: the migration seeds it on Postgres, and
+an `after_create` hook in `app/models/channel.py` seeds it on a `metadata.create_all`
+database. Alembic builds its own `Table` object, so the hook cannot double-insert.
 
 ## Configuration
 
@@ -179,7 +269,16 @@ Backend settings are read from `backend/.env` with the `CRM_` prefix (see
 
 ## Known gaps
 
-- No authentication or authorisation — `author` on interactions is free text.
+- No authentication or authorisation — `author` on interactions, and `actor` on ticket
+  events, are free text. Ticket assignment uses a standalone `agents` table rather than
+  real users; reconciling the two is deferred to the auth story.
+- No SLA timers or scheduled auto-escalation — `Ticket.is_overdue` is computed on read
+  only; nothing acts on it.
+- **No channel provider is integrated** — all five drivers are stubs, so nothing is
+  actually sent or received; inbound only arrives if something posts to the webhook
+  endpoint directly. Channel-message attachments, live-chat presence/typing, webhook
+  signature verification, and automatic inbound→ticket routing are all deferred to the
+  per-channel stories.
 - Attachments are not virus-scanned (`TODO` marked in `app/services/storage.py`).
 - Attachment storage is local-filesystem only; S3 would slot in behind the `Storage`
   protocol in the same module.

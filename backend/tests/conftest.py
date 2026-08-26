@@ -118,5 +118,54 @@ def small_upload_limit(monkeypatch: pytest.MonkeyPatch) -> int:
     return limit
 
 
+@pytest.fixture()
+def agent(client: TestClient) -> dict:
+    """One active agent."""
+    res = client.post(
+        "/api/agents", json={"display_name": "Dana Support", "email": "dana@crm.test"}
+    )
+    assert res.status_code == 201, res.text
+    return res.json()
+
+
+@pytest.fixture()
+def inactive_agent(client: TestClient) -> dict:
+    """One deactivated agent — assignment to them must be refused."""
+    res = client.post(
+        "/api/agents", json={"display_name": "Retired Agent", "email": "retired@crm.test"}
+    )
+    assert res.status_code == 201, res.text
+    created = res.json()
+    deactivated = client.delete(f"/api/agents/{created['id']}")
+    assert deactivated.status_code == 200, deactivated.text
+    return deactivated.json()
+
+
+@pytest.fixture()
+def ticket_category(client: TestClient) -> dict:
+    """One active category with a non-default priority, to prove inheritance."""
+    res = client.post(
+        "/api/ticket-categories",
+        json={"name": "Billing", "default_priority": "high"},
+    )
+    assert res.status_code == 201, res.text
+    return res.json()
+
+
+@pytest.fixture()
+def ticket(client: TestClient, customer: dict) -> dict:
+    """One open ticket on `customer`, with no category or assignee."""
+    res = client.post(
+        "/api/tickets",
+        json={
+            "customer_id": customer["id"],
+            "subject": "Cannot log in",
+            "description": "Password reset email never arrives.",
+        },
+    )
+    assert res.status_code == 201, res.text
+    return res.json()
+
+
 def missing_uuid() -> uuid.UUID:
     return uuid.uuid4()

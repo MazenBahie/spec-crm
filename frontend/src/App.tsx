@@ -4,11 +4,16 @@ import CustomerDetailPage from "./pages/CustomerDetailPage";
 import CustomerEditPage from "./pages/CustomerEditPage";
 import CustomersListPage from "./pages/CustomersListPage";
 import HealthPage from "./pages/HealthPage";
+import TicketDetailPage from "./pages/TicketDetailPage";
+import TicketEditPage from "./pages/TicketEditPage";
+import TicketSetupPage from "./pages/TicketSetupPage";
+import TicketsListPage from "./pages/TicketsListPage";
 import { tokens } from "./components/ui";
 
 const NAV = [
   { to: "/", label: "Health" },
   { to: "/customers", label: "Customers" },
+  { to: "/tickets", label: "Tickets" },
 ];
 
 function Nav() {
@@ -57,6 +62,11 @@ export default function App() {
         <Route path="/customers/new" element={<CustomerEditPage />} />
         <Route path="/customers/:id" element={<CustomerDetailPage />} />
         <Route path="/customers/:id/edit" element={<CustomerEditPage />} />
+        <Route path="/tickets" element={<TicketsListPage />} />
+        <Route path="/tickets/new" element={<TicketEditPage />} />
+        <Route path="/tickets/setup" element={<TicketSetupPage />} />
+        <Route path="/tickets/:id" element={<TicketDetailPage />} />
+        <Route path="/tickets/:id/edit" element={<TicketEditPage />} />
         <Route
           path="*"
           element={

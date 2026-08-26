@@ -2,7 +2,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.api.routes import customers, health
+from app.api.routes import channels, customers, health, tickets
 from app.core.config import settings
 from app.services.errors import Conflict, NotFound, PayloadTooLarge
 
@@ -17,6 +17,8 @@ def create_app() -> FastAPI:
     )
     app.include_router(health.router, prefix=settings.api_prefix)
     app.include_router(customers.router, prefix=settings.api_prefix)
+    app.include_router(tickets.router, prefix=settings.api_prefix)
+    app.include_router(channels.router, prefix=settings.api_prefix)
     register_exception_handlers(app)
     return app
 

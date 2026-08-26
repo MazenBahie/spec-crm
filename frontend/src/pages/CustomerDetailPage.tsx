@@ -4,12 +4,13 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { archiveCustomer, deleteCustomer, getCustomer } from "../api/customers";
 import AttachmentsPanel from "../components/customer/AttachmentsPanel";
 import ContactDetailsPanel from "../components/customer/ContactDetailsPanel";
+import CustomerTicketsPanel from "../components/customer/CustomerTicketsPanel";
 import InteractionsPanel from "../components/customer/InteractionsPanel";
 import NotesPanel from "../components/customer/NotesPanel";
 import { ErrorBanner, Loading, StatusBadge, formatDateTime, styles, tokens } from "../components/ui";
 import type { CustomerDetail } from "../types/customer";
 
-const TABS = ["Overview", "Contacts", "Interactions", "Notes & Attachments"] as const;
+const TABS = ["Overview", "Contacts", "Interactions", "Tickets", "Notes & Attachments"] as const;
 type Tab = (typeof TABS)[number];
 
 export default function CustomerDetailPage() {
@@ -184,6 +185,8 @@ export default function CustomerDetailPage() {
         {tab === "Contacts" && <ContactDetailsPanel customerId={id} />}
 
         {tab === "Interactions" && <InteractionsPanel customerId={id} archived={archived} />}
+
+        {tab === "Tickets" && <CustomerTicketsPanel customerId={id} archived={archived} />}
 
         {tab === "Notes & Attachments" && (
           <>
