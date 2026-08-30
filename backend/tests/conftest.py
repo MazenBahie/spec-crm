@@ -170,6 +170,45 @@ def other_agent_client(app: FastAPI, other_agent: dict) -> Iterator[TestClient]:
 
 
 @pytest.fixture()
+def customer_email_contact(client: TestClient, customer: dict) -> dict:
+    """An email-kind contact on `customer` -- the signup-matching source."""
+    res = client.post(
+        f"/api/customers/{customer['id']}/contacts",
+        json={"kind": "email", "value": "acme-owner@example.com", "is_primary": True},
+    )
+    assert res.status_code == 201, res.text
+    return res.json()
+
+
+@pytest.fixture()
+def portal_auth(client: TestClient, customer_email_contact: dict) -> dict:
+    """A fresh portal signup response: {token, expires_at, portal_user}."""
+    res = client.post(
+        "/api/portal/auth/signup",
+        json={
+            "email": customer_email_contact["value"],
+            "password": "hunter2pass",
+            "display_name": "Acme Owner",
+        },
+    )
+    assert res.status_code == 201, res.text
+    return res.json()
+
+
+@pytest.fixture()
+def portal_user(portal_auth: dict) -> dict:
+    return portal_auth["portal_user"]
+
+
+@pytest.fixture()
+def portal_client(app: FastAPI, portal_auth: dict) -> Iterator[TestClient]:
+    """A client authenticated as `portal_user` via a bearer token."""
+    headers = {"Authorization": f"Bearer {portal_auth['token']}"}
+    with TestClient(app, headers=headers) as test_client:
+        yield test_client
+
+
+@pytest.fixture()
 def ticket_category(client: TestClient) -> dict:
     """One active category with a non-default priority, to prove inheritance."""
     res = client.post(

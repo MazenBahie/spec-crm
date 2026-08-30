@@ -19,6 +19,11 @@ from app.models.customer import (
     Interaction,
     Note,
 )
+from app.models.portal import (
+    PortalSession,
+    PortalUser,
+    TicketFeedback,
+)
 from app.models.ticket import (
     Agent,
     Ticket,
@@ -39,9 +44,12 @@ __all__ = [
     "Customer",
     "Interaction",
     "Note",
+    "PortalSession",
+    "PortalUser",
     "QuickReply",
     "Ticket",
     "TicketCategory",
     "TicketEvent",
+    "TicketFeedback",
     "TicketNote",
 ]

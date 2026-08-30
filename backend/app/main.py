@@ -7,6 +7,7 @@ from app.api.routes import (
     customers,
     dashboard,
     health,
+    portal,
     quick_replies,
     tasks,
     tickets,
@@ -27,6 +28,10 @@ def create_app() -> FastAPI:
     app.include_router(customers.router, prefix=settings.api_prefix)
     app.include_router(tickets.router, prefix=settings.api_prefix)
     app.include_router(channels.router, prefix=settings.api_prefix)
+    # Real, credential-based auth -- distinct from the X-Agent-Id placeholder
+    # below. Auth is enforced inside app.api.deps_portal, not at router level,
+    # so /portal/auth/signup and /portal/auth/login can stay open.
+    app.include_router(portal.router, prefix=settings.api_prefix)
     # Agent-scoped routers. Each declares Depends(get_current_agent) at router
     # level, so every route below is 401 without a valid X-Agent-Id. /health and
     # the pre-existing routers stay open — real auth is a follow-up story that

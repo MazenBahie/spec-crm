@@ -20,6 +20,7 @@ services:
     build:
       context: ../backend
     environment:
+      # CRM_DATABASE_URL: postgresql+psycopg://crm:crm@localhost:5432/crm
       CRM_DATABASE_URL: postgresql+psycopg://crm:crm@db:5432/crm
       CRM_ATTACHMENTS_DIR: /data/attachments
       CRM_MAX_UPLOAD_BYTES: "10485760"

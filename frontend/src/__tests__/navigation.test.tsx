@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import App from "../App";
 import { clearAgentId, setAgentId } from "../api/agentContext";
+import { clearPortalSession } from "../api/portalAuth";
 
 const AGENT_ID = "11111111-1111-4111-8111-111111111111";
 
@@ -54,6 +55,7 @@ beforeEach(() => {
   // state update outside `act`.
   cleanup();
   clearAgentId();
+  clearPortalSession();
 });
 
 describe("app navigation", () => {
@@ -204,5 +206,34 @@ describe("app navigation", () => {
     expect(screen.getByRole("link", { name: "Customers" })).not.toHaveAttribute(
       "aria-current",
     );
+  });
+});
+
+describe("customer portal", () => {
+  it("redirects /portal/tickets to /portal/login when no session is stored", async () => {
+    mockBackend();
+    renderApp("/portal/tickets");
+
+    expect(
+      await screen.findByRole("heading", { level: 1, name: "Log in" }),
+    ).toBeInTheDocument();
+  });
+
+  it("never renders the agent nav bar under /portal", async () => {
+    mockBackend();
+    renderApp("/portal/login");
+
+    await screen.findByRole("heading", { level: 1, name: "Log in" });
+    expect(screen.queryByRole("link", { name: "Dashboard" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Tickets" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Customers" })).not.toBeInTheDocument();
+  });
+
+  it("still renders the agent nav bar outside /portal", async () => {
+    mockBackend();
+    renderApp("/health");
+
+    await screen.findByText("CRM — System Health");
+    expect(screen.getByRole("link", { name: "Dashboard" })).toBeInTheDocument();
   });
 });

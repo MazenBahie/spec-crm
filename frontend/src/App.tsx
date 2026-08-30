@@ -9,6 +9,7 @@ import TicketDetailPage from "./pages/TicketDetailPage";
 import TicketEditPage from "./pages/TicketEditPage";
 import TicketSetupPage from "./pages/TicketSetupPage";
 import TicketsListPage from "./pages/TicketsListPage";
+import PortalApp from "./PortalApp";
 import { tokens } from "./components/ui";
 
 // The dashboard is where a shift starts, so it takes the landing slot; health
@@ -22,6 +23,9 @@ const NAV = [
 
 function Nav() {
   const { pathname } = useLocation();
+  // The portal renders its own shell (PortalApp/PortalShell) -- the agent
+  // nav must never appear there.
+  if (pathname.startsWith("/portal")) return null;
   return (
     <nav
       style={{
@@ -72,6 +76,7 @@ export default function App() {
         <Route path="/tickets/setup" element={<TicketSetupPage />} />
         <Route path="/tickets/:id" element={<TicketDetailPage />} />
         <Route path="/tickets/:id/edit" element={<TicketEditPage />} />
+        <Route path="/portal/*" element={<PortalApp />} />
         <Route
           path="*"
           element={

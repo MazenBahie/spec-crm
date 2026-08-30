@@ -30,6 +30,7 @@ from app.models.customer import _pk
 
 if TYPE_CHECKING:
     from app.models.customer import Customer
+    from app.models.portal import TicketFeedback
 
 TICKET_STATUSES = (
     "open",
@@ -142,6 +143,9 @@ class Ticket(Base):
         cascade="all, delete-orphan",
         passive_deletes=True,
         order_by="TicketEvent.created_at",
+    )
+    feedback: Mapped[TicketFeedback | None] = relationship(
+        back_populates="ticket", cascade="all, delete-orphan", passive_deletes=True
     )
 
     @property
