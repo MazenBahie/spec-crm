@@ -5,6 +5,8 @@ import CustomerEditPage from "./pages/CustomerEditPage";
 import CustomersListPage from "./pages/CustomersListPage";
 import DashboardPage from "./pages/DashboardPage";
 import HealthPage from "./pages/HealthPage";
+import KnowledgeBaseEditPage from "./pages/KnowledgeBaseEditPage";
+import KnowledgeBaseListPage from "./pages/KnowledgeBaseListPage";
 import TicketDetailPage from "./pages/TicketDetailPage";
 import TicketEditPage from "./pages/TicketEditPage";
 import TicketSetupPage from "./pages/TicketSetupPage";
@@ -18,6 +20,7 @@ const NAV = [
   { to: "/dashboard", label: "Dashboard" },
   { to: "/customers", label: "Customers" },
   { to: "/tickets", label: "Tickets" },
+  { to: "/kb", label: "Knowledge Base" },
   { to: "/health", label: "Health" },
 ];
 
@@ -76,6 +79,9 @@ export default function App() {
         <Route path="/tickets/setup" element={<TicketSetupPage />} />
         <Route path="/tickets/:id" element={<TicketDetailPage />} />
         <Route path="/tickets/:id/edit" element={<TicketEditPage />} />
+        <Route path="/kb" element={<KnowledgeBaseListPage />} />
+        <Route path="/kb/new" element={<KnowledgeBaseEditPage />} />
+        <Route path="/kb/:id" element={<KnowledgeBaseEditPage />} />
         <Route path="/portal/*" element={<PortalApp />} />
         <Route
           path="*"

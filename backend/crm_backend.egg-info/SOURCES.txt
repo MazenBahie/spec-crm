@@ -9,7 +9,9 @@ app/api/routes/channels.py
 app/api/routes/customers.py
 app/api/routes/dashboard.py
 app/api/routes/health.py
+app/api/routes/knowledge_base.py
 app/api/routes/portal.py
+app/api/routes/portal_kb.py
 app/api/routes/quick_replies.py
 app/api/routes/tasks.py
 app/api/routes/tickets.py
@@ -22,12 +24,14 @@ app/models/__init__.py
 app/models/agent.py
 app/models/channel.py
 app/models/customer.py
+app/models/knowledge_base.py
 app/models/portal.py
 app/models/ticket.py
 app/schemas/__init__.py
 app/schemas/agent.py
 app/schemas/channel.py
 app/schemas/customer.py
+app/schemas/knowledge_base.py
 app/schemas/portal.py
 app/schemas/ticket.py
 app/services/__init__.py
@@ -35,6 +39,7 @@ app/services/activity.py
 app/services/agent_dashboard.py
 app/services/customers.py
 app/services/errors.py
+app/services/knowledge_base.py
 app/services/portal.py
 app/services/quick_replies.py
 app/services/storage.py

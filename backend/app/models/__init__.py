@@ -19,6 +19,10 @@ from app.models.customer import (
     Interaction,
     Note,
 )
+from app.models.knowledge_base import (
+    Article,
+    ArticleCategory,
+)
 from app.models.portal import (
     PortalSession,
     PortalUser,
@@ -37,6 +41,8 @@ __all__ = [
     "ActivityMention",
     "Agent",
     "AgentTask",
+    "Article",
+    "ArticleCategory",
     "Attachment",
     "Channel",
     "ChannelMessage",

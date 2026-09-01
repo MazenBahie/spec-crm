@@ -12,6 +12,7 @@ Entry point for the **checkout** feature. Stories execute in order by their `NN`
 | 04 | `04-story-communication-channels.md` | Communication Channels | communication-channels | 01, 02, 03 |
 | 05 | `05-story-agent-dashboard.md` | Agent Dashboard | agent-dashboard | 01, 02, 03, 04 |
 | 06 | `06-story-customer-portal.md` | Customer Portal | customer-portal | 01, 02, 03 |
+| 07 | `07-story-knowledge-base.md` | Knowledge Base | knowledge-base | 01, 03, 05 |
 
 ## Dependency notes
 
@@ -41,6 +42,11 @@ Strictly sequential — each story assumes the previous one is merged.
   - `app/services/portal.py` wraps `create_ticket`/`get_ticket`/`list_customer_tickets` from `app/services/tickets.py` rather than duplicating them, and reuses `Ticket.is_terminal` as the feedback-eligibility gate.
   - The Alembic chain stays linear: `0005_customer_portal` sets `down_revision = '0004'`, and introduces no new named enum types (unlike `0001`–`0004`).
   - The frontend adds a `/portal/*` route subtree (`PortalApp.tsx`) that never renders the agent `<Nav>`, with its own `portalAuth.ts`/`portalClient.ts` parallel to (not shared with) `agentContext.ts`/`client.ts`.
+- **01, 03, 05 → 07.** Story 07 (Knowledge Base) is not part of the strict 01→06 chain, but has real technical dependencies, not just borrowed conventions:
+  - `kb_articles.author_agent_id` is a nullable FK to `agents.id`; the `agents` table itself was introduced by Story 03 (`app/models/ticket.py`), not by Story 05.
+  - The staff-side `/api/kb/...` router depends on `get_current_agent`/`CurrentAgent` from `backend/app/api/deps.py`, introduced by Story 05.
+  - It does **not** depend on Story 04 (`channels`) or Story 06 (`portal_users`/`portal_sessions`) — the public `/api/portal/kb/...` endpoints are unauthenticated and never call `deps_portal.py`; Story 06 is referenced only as a router-structure precedent (`portal.py`), not a runtime dependency.
+  - New tables use the same `_pk()` uuid-primary-key pattern as every table since Story 02 (`app/models/customer.py`), and the Alembic chain stays linear: `0006` sets `down_revision = '0005'`.
 
 ## Shared contracts to respect
 

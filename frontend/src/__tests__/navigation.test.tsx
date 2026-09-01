@@ -207,6 +207,28 @@ describe("app navigation", () => {
       "aria-current",
     );
   });
+
+  it("exposes Knowledge Base in the main navigation", async () => {
+    mockBackend();
+    renderApp("/health");
+    await screen.findByText("CRM — System Health");
+
+    const link = screen.getByRole("link", { name: "Knowledge Base" });
+    expect(link).toHaveAttribute("href", "/kb");
+  });
+
+  it("navigates from /health to the knowledge base via the nav link", async () => {
+    mockBackend();
+    const user = userEvent.setup();
+    renderApp("/health");
+
+    await screen.findByText("CRM — System Health");
+    await user.click(screen.getByRole("link", { name: "Knowledge Base" }));
+
+    expect(
+      await screen.findByRole("heading", { level: 1, name: "Knowledge base" }),
+    ).toBeInTheDocument();
+  });
 });
 
 describe("customer portal", () => {

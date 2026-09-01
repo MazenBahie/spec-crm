@@ -3,6 +3,8 @@ import { Navigate, Outlet, Route, Routes, useNavigate } from "react-router-dom";
 
 import { logout as apiLogout } from "./api/portal";
 import { clearPortalSession, getPortalToken, getPortalUser, subscribePortalToken } from "./api/portalAuth";
+import PortalArticlePage from "./pages/portal/PortalArticlePage";
+import PortalKnowledgeBasePage from "./pages/portal/PortalKnowledgeBasePage";
 import PortalLoginPage from "./pages/portal/PortalLoginPage";
 import PortalNewTicketPage from "./pages/portal/PortalNewTicketPage";
 import PortalSignupPage from "./pages/portal/PortalSignupPage";
@@ -68,6 +70,10 @@ export default function PortalApp() {
       <Routes>
         <Route path="login" element={<PortalLoginPage />} />
         <Route path="signup" element={<PortalSignupPage />} />
+        {/* Knowledge base browsing needs no portal session -- it lives
+            outside PortalProtectedRoute, alongside login/signup. */}
+        <Route path="kb" element={<PortalKnowledgeBasePage />} />
+        <Route path="kb/:slug" element={<PortalArticlePage />} />
         <Route element={<PortalProtectedRoute />}>
           <Route path="tickets" element={<PortalTicketsPage />} />
           <Route path="tickets/new" element={<PortalNewTicketPage />} />
