@@ -1,9 +1,10 @@
 import { useSyncExternalStore } from "react";
-import { Navigate, Outlet, Route, Routes, useNavigate } from "react-router-dom";
+import { Link, Navigate, Outlet, Route, Routes, useNavigate } from "react-router-dom";
 
 import { logout as apiLogout } from "./api/portal";
 import { clearPortalSession, getPortalToken, getPortalUser, subscribePortalToken } from "./api/portalAuth";
 import PortalArticlePage from "./pages/portal/PortalArticlePage";
+import PortalChatPage from "./pages/portal/PortalChatPage";
 import PortalKnowledgeBasePage from "./pages/portal/PortalKnowledgeBasePage";
 import PortalLoginPage from "./pages/portal/PortalLoginPage";
 import PortalNewTicketPage from "./pages/portal/PortalNewTicketPage";
@@ -43,6 +44,9 @@ function PortalShell() {
       <strong>Customer Portal</strong>
       {user && (
         <span style={{ display: "flex", gap: "1rem", alignItems: "center" }}>
+          <Link to="/portal/chat" style={{ color: tokens.accent }}>
+            Chat with us
+          </Link>
           <span style={{ color: tokens.muted }}>{user.display_name}</span>
           <button type="button" style={styles.button} onClick={() => void handleLogout()}>
             Log out
@@ -78,6 +82,7 @@ export default function PortalApp() {
           <Route path="tickets" element={<PortalTicketsPage />} />
           <Route path="tickets/new" element={<PortalNewTicketPage />} />
           <Route path="tickets/:id" element={<PortalTicketDetailPage />} />
+          <Route path="chat" element={<PortalChatPage />} />
           <Route index element={<Navigate to="tickets" replace />} />
         </Route>
         <Route path="*" element={<Navigate to="login" replace />} />

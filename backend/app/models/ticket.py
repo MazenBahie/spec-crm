@@ -50,6 +50,8 @@ TICKET_EVENT_TYPES = (
     "unassigned",
     "escalated",
     "commented",
+    "ai_summary_generated",
+    "ai_category_suggested",
 )
 
 ticket_status_enum = Enum(*TICKET_STATUSES, name="ticket_status")
@@ -107,6 +109,9 @@ class Ticket(Base):
     category_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("ticket_categories.id", ondelete="SET NULL"), index=True
     )
+    ai_suggested_category_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("ticket_categories.id", ondelete="SET NULL"), index=True
+    )
     assignee_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("agents.id", ondelete="SET NULL"), index=True
     )
@@ -125,6 +130,8 @@ class Ticket(Base):
     due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    ai_summary: Mapped[str | None] = mapped_column(Text)
+    ai_summary_generated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
@@ -136,7 +143,10 @@ class Ticket(Base):
     )
 
     customer: Mapped[Customer] = relationship(back_populates="tickets")
-    category: Mapped[TicketCategory | None] = relationship()
+    category: Mapped[TicketCategory | None] = relationship(foreign_keys=[category_id])
+    ai_suggested_category: Mapped[TicketCategory | None] = relationship(
+        foreign_keys=[ai_suggested_category_id]
+    )
     assignee: Mapped[Agent | None] = relationship()
     events: Mapped[list[TicketEvent]] = relationship(
         back_populates="ticket",

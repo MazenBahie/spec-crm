@@ -37,6 +37,8 @@ from app.schemas.ticket import (
 )
 from app.services import ticket_notes as notes_svc
 from app.services import tickets as svc
+from app.services.ai import categorization as ai_categorization
+from app.services.ai import ticket_summary as ai_summary_svc
 
 router = APIRouter(tags=["tickets"])
 
@@ -131,6 +133,36 @@ def escalate_ticket(
     ticket_id: uuid.UUID, payload: TicketEscalation, db: DbDep
 ) -> TicketRead:
     return TicketRead.model_validate(svc.escalate_ticket(db, ticket_id, payload))
+
+
+# --------------------------------------------------------------------------- #
+# AI summary (agent-only — costs a real API call, so it is never automatic)
+# --------------------------------------------------------------------------- #
+@router.post("/tickets/{ticket_id}/ai/summary", response_model=TicketRead)
+def regenerate_ticket_summary(
+    ticket_id: uuid.UUID, db: DbDep, agent: CurrentAgent
+) -> TicketRead:
+    """Regenerate and persist the AI summary. Explicit action only — see
+    Story Goal on why this is never triggered by a page load."""
+    return TicketRead.model_validate(ai_summary_svc.generate_summary(db, ticket_id))
+
+
+@router.post(
+    "/tickets/{ticket_id}/ai/suggested-category", response_model=TicketDetailRead
+)
+def recompute_suggested_category(ticket_id: uuid.UUID, db: DbDep) -> TicketDetailRead:
+    """Recompute the AI category suggestion on demand.
+
+    Unlike the best-effort hook in create_ticket, this is an explicit,
+    single-purpose agent action with nothing else at stake: if the provider
+    is unavailable or misconfigured, AIProviderError is allowed to propagate
+    rather than being swallowed, so the agent who clicked "Recompute" sees
+    that it failed instead of silently seeing nothing change. The
+    AIProviderError -> 502 handler is registered once in app.main (Story 09).
+    """
+    ai_categorization.suggest_category(db, ticket_id)
+    ticket = svc.get_ticket(db, ticket_id, with_relations=True)
+    return TicketDetailRead.model_validate(ticket)
 
 
 # --------------------------------------------------------------------------- #

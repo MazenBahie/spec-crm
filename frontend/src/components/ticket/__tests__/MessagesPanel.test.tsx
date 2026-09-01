@@ -72,6 +72,7 @@ function ticketDetail(): TicketDetail {
     reference: "TCK-44444444",
     customer_id: crypto.randomUUID(),
     category_id: null,
+    ai_suggested_category_id: null,
     assignee_id: null,
     subject: "Cannot log in",
     description: "",
@@ -85,6 +86,8 @@ function ticketDetail(): TicketDetail {
     created_at: "2026-01-01T00:00:00Z",
     updated_at: "2026-01-01T00:00:00Z",
     is_overdue: false,
+    ai_summary: null,
+    ai_summary_generated_at: null,
     customer: {
       id: crypto.randomUUID(),
       display_name: "Ali Hassan",
@@ -92,6 +95,7 @@ function ticketDetail(): TicketDetail {
       status: "active",
     },
     category: null,
+    ai_suggested_category: null,
     assignee: null,
   };
 }
@@ -107,6 +111,8 @@ function mockApi(
     catalogue?: Channel[];
     sent?: ChannelMessage;
     quickReplies?: QuickReply[];
+    suggestedReply?: string;
+    suggestedReplyStatus?: number;
   } = {},
 ) {
   const requests: Recorded[] = [];
@@ -123,6 +129,12 @@ function mockApi(
         headers: { "Content-Type": "application/json" },
       });
 
+    if (url.includes("/ai/suggested-reply")) {
+      if (options.suggestedReplyStatus && options.suggestedReplyStatus >= 400) {
+        return json({ detail: "AI unavailable" }, options.suggestedReplyStatus);
+      }
+      return json({ draft: options.suggestedReply ?? "Here is a suggested reply." });
+    }
     if (url.includes("/quick-replies")) return json(quickReplies);
     if (url.includes("/channels")) return json(catalogue);
     if (method === "POST") {
@@ -385,5 +397,88 @@ describe("MessagesPanel", () => {
     render(<MessagesPanel ticketId={TICKET_ID} />);
 
     expect(await screen.findByRole("alert")).toHaveTextContent("ticket not found");
+  });
+
+  it("suggest-a-reply populates the compose box and labels it as AI-drafted", async () => {
+    mockApi([message({ direction: "inbound" })], {
+      suggestedReply: "Thanks for reaching out, we're looking into it.",
+    });
+    const user = userEvent.setup();
+
+    render(<MessagesPanel ticketId={TICKET_ID} />);
+    await screen.findAllByRole("listitem");
+
+    await user.click(screen.getByRole("button", { name: "Suggest a reply" }));
+
+    expect(await screen.findByLabelText("Message body")).toHaveValue(
+      "Thanks for reaching out, we're looking into it.",
+    );
+    expect(screen.getByRole("status")).toHaveTextContent("AI-drafted");
+  });
+
+  it("disables Suggest a reply when the thread has no inbound message", async () => {
+    mockApi([message({ direction: "outbound" })]);
+    render(<MessagesPanel ticketId={TICKET_ID} />);
+    await screen.findAllByRole("listitem");
+
+    expect(screen.getByRole("button", { name: "Suggest a reply" })).toBeDisabled();
+  });
+
+  it("enables Suggest a reply once an inbound message exists", async () => {
+    mockApi([message({ direction: "inbound" })]);
+    render(<MessagesPanel ticketId={TICKET_ID} />);
+    await screen.findAllByRole("listitem");
+
+    expect(screen.getByRole("button", { name: "Suggest a reply" })).toBeEnabled();
+  });
+
+  it("confirms before overwriting a non-empty draft", async () => {
+    mockApi([message({ direction: "inbound" })], { suggestedReply: "AI draft" });
+    const user = userEvent.setup();
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
+
+    render(<MessagesPanel ticketId={TICKET_ID} />);
+    await screen.findAllByRole("listitem");
+
+    await user.type(screen.getByLabelText("Message body"), "my own draft");
+    await user.click(screen.getByRole("button", { name: "Suggest a reply" }));
+
+    expect(confirmSpy).toHaveBeenCalled();
+    expect(screen.getByLabelText("Message body")).toHaveValue("my own draft");
+
+    confirmSpy.mockReturnValue(true);
+    await user.click(screen.getByRole("button", { name: "Suggest a reply" }));
+    expect(await screen.findByLabelText("Message body")).toHaveValue("AI draft");
+
+    confirmSpy.mockRestore();
+  });
+
+  it("clears the AI-drafted label on manual edit", async () => {
+    mockApi([message({ direction: "inbound" })], { suggestedReply: "AI draft" });
+    const user = userEvent.setup();
+
+    render(<MessagesPanel ticketId={TICKET_ID} />);
+    await screen.findAllByRole("listitem");
+
+    await user.click(screen.getByRole("button", { name: "Suggest a reply" }));
+    await screen.findByRole("status");
+
+    await user.type(screen.getByLabelText("Message body"), "!");
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  });
+
+  it("never auto-sends a suggested reply", async () => {
+    const requests = mockApi([message({ direction: "inbound" })], { suggestedReply: "AI draft" });
+    const user = userEvent.setup();
+
+    render(<MessagesPanel ticketId={TICKET_ID} />);
+    await screen.findAllByRole("listitem");
+
+    await user.click(screen.getByRole("button", { name: "Suggest a reply" }));
+    await screen.findByLabelText("Message body");
+
+    expect(requests.some((r) => r.method === "POST" && r.url.includes("/messages") && !r.url.includes("/ai/"))).toBe(
+      false,
+    );
   });
 });

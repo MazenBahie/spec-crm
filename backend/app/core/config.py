@@ -14,6 +14,14 @@ class Settings(BaseSettings):
 
     portal_session_ttl_days: int = 14
 
+    # AI integration (Story 08). Every AI capability across the arc must
+    # degrade to StubAIProvider when ai_enabled is False or no key is
+    # configured -- see app/services/ai/provider.py:get_ai_provider(). Never
+    # make Anthropic reachability a hard dependency for tests or local dev.
+    anthropic_api_key: str | None = None
+    ai_model: str = "claude-opus-5"
+    ai_enabled: bool = False
+
     model_config = SettingsConfigDict(env_file=".env", env_prefix="CRM_", extra="ignore")
 
 

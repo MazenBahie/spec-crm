@@ -25,6 +25,7 @@ from app.db.base import Base
 from app.models.customer import _pk
 
 if TYPE_CHECKING:
+    from app.models.chatbot import ChatbotSession
     from app.models.customer import Customer
     from app.models.ticket import Ticket
 
@@ -54,6 +55,9 @@ class PortalUser(Base):
 
     customer: Mapped[Customer] = relationship(back_populates="portal_users")
     sessions: Mapped[list[PortalSession]] = relationship(
+        back_populates="portal_user", cascade="all, delete-orphan", passive_deletes=True
+    )
+    chatbot_sessions: Mapped[list[ChatbotSession]] = relationship(
         back_populates="portal_user", cascade="all, delete-orphan", passive_deletes=True
     )
 

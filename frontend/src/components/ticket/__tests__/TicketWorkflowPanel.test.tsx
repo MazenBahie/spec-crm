@@ -11,6 +11,7 @@ function ticket(overrides: Partial<Ticket> = {}): Ticket {
     reference: "TCK-22222222",
     customer_id: crypto.randomUUID(),
     category_id: null,
+    ai_suggested_category_id: null,
     assignee_id: null,
     subject: "x",
     description: "",
@@ -24,6 +25,8 @@ function ticket(overrides: Partial<Ticket> = {}): Ticket {
     created_at: "2026-01-01T00:00:00Z",
     updated_at: "2026-01-01T00:00:00Z",
     is_overdue: false,
+    ai_summary: null,
+    ai_summary_generated_at: null,
     ...overrides,
   };
 }

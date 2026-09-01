@@ -1,8 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 
+import { regenerateTicketSummary } from "../api/ai";
 import { deleteTicket, getTicket } from "../api/tickets";
+import CategorySuggestion from "../components/ticket/CategorySuggestion";
 import MessagesPanel from "../components/ticket/MessagesPanel";
+import SuggestedSolutionsPanel from "../components/ticket/SuggestedSolutionsPanel";
 import NotesThreadPanel from "../components/ticket/NotesThreadPanel";
 import TicketHistoryPanel from "../components/ticket/TicketHistoryPanel";
 import TicketWorkflowPanel from "../components/ticket/TicketWorkflowPanel";
@@ -23,6 +26,8 @@ export default function TicketDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [tab, setTab] = useState<Tab>("Overview");
+  const [summaryBusy, setSummaryBusy] = useState(false);
+  const [summaryError, setSummaryError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -40,6 +45,21 @@ export default function TicketDetailPage() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  async function handleRegenerateSummary() {
+    setSummaryBusy(true);
+    setSummaryError(null);
+    try {
+      const updated = await regenerateTicketSummary(id);
+      setTicket((current) => (current ? { ...current, ...updated } : current));
+    } catch (err) {
+      // A failed regeneration must not blank the summary that's already
+      // there, and must not crash the rest of the page.
+      setSummaryError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSummaryBusy(false);
+    }
+  }
 
   async function handleDelete() {
     if (!window.confirm("Delete this ticket and all of its history? This cannot be undone.")) {
@@ -135,6 +155,47 @@ export default function TicketDetailPage() {
         {tab === "Overview" && (
           <section>
             <h2 style={{ fontSize: "1.1rem" }}>Overview</h2>
+
+            <div style={{ ...styles.card, marginBottom: "1rem" }}>
+              <div style={{ ...styles.row, justifyContent: "space-between" }}>
+                <span style={{ ...styles.row, gap: "0.4rem" }}>
+                  <strong>Summary</strong>
+                  {/* Visible AI-generated label, per this arc's global rule —
+                      every AI output is marked wherever it is shown. */}
+                  <span
+                    style={{
+                      fontSize: "0.7rem",
+                      textTransform: "uppercase",
+                      letterSpacing: "0.05em",
+                      padding: "0.1rem 0.4rem",
+                      borderRadius: 8,
+                      border: `1px solid ${tokens.accent}`,
+                      color: tokens.accent,
+                    }}
+                  >
+                    AI-generated
+                  </span>
+                </span>
+                <button
+                  type="button"
+                  style={styles.button}
+                  onClick={() => void handleRegenerateSummary()}
+                  disabled={summaryBusy}
+                >
+                  {summaryBusy ? "Generating…" : ticket.ai_summary ? "Regenerate" : "Generate summary"}
+                </button>
+              </div>
+              <ErrorBanner message={summaryError} />
+              <p style={{ whiteSpace: "pre-wrap", margin: "0.5rem 0 0" }}>
+                {ticket.ai_summary ?? "No summary yet."}
+              </p>
+              {ticket.ai_summary_generated_at && (
+                <p style={{ ...styles.muted, margin: "0.35rem 0 0", fontSize: "0.8rem" }}>
+                  Generated {formatDateTime(ticket.ai_summary_generated_at)}
+                </p>
+              )}
+            </div>
+
             <dl>
               <dt style={styles.label}>Subject</dt>
               <dd style={{ margin: "0 0 0.75rem" }}>{ticket.subject}</dd>
@@ -143,7 +204,10 @@ export default function TicketDetailPage() {
                 {ticket.description || "—"}
               </dd>
               <dt style={styles.label}>Category</dt>
-              <dd style={{ margin: "0 0 0.75rem" }}>{ticket.category?.name ?? "—"}</dd>
+              <dd style={{ margin: "0 0 0.75rem" }}>
+                {ticket.category?.name ?? "—"}
+                <CategorySuggestion ticket={ticket} onChanged={() => void load()} />
+              </dd>
               <dt style={styles.label}>Priority</dt>
               <dd style={{ margin: "0 0 0.75rem" }}>{ticket.priority}</dd>
               <dt style={styles.label}>Assignee</dt>
@@ -166,6 +230,8 @@ export default function TicketDetailPage() {
               <dt style={styles.label}>Last updated</dt>
               <dd style={{ margin: 0 }}>{formatDateTime(ticket.updated_at)}</dd>
             </dl>
+
+            <SuggestedSolutionsPanel ticketId={id} />
           </section>
         )}
 

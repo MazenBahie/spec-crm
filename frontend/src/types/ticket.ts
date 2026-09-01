@@ -16,7 +16,9 @@ export type TicketEventType =
   | "assigned"
   | "unassigned"
   | "escalated"
-  | "commented";
+  | "commented"
+  | "ai_summary_generated"
+  | "ai_category_suggested";
 
 export const TICKET_STATUSES: TicketStatus[] = [
   "open",
@@ -75,6 +77,7 @@ export interface Ticket {
   reference: string;
   customer_id: string;
   category_id: string | null;
+  ai_suggested_category_id: string | null;
   assignee_id: string | null;
   subject: string;
   description: string;
@@ -88,6 +91,8 @@ export interface Ticket {
   created_at: string;
   updated_at: string;
   is_overdue: boolean;
+  ai_summary: string | null;
+  ai_summary_generated_at: string | null;
 }
 
 export interface TicketDetail extends Ticket {
@@ -98,6 +103,7 @@ export interface TicketDetail extends Ticket {
     status: string;
   };
   category: TicketCategory | null;
+  ai_suggested_category: TicketCategory | null;
   assignee: Agent | null;
 }
 

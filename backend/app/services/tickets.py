@@ -14,6 +14,7 @@ row.
 
 from __future__ import annotations
 
+import logging
 import uuid
 from datetime import datetime, timezone
 
@@ -43,6 +44,8 @@ from app.schemas.ticket import (
 from app.services import activity
 from app.services.customers import _require_active, get_customer
 from app.services.errors import Conflict, NotFound
+
+logger = logging.getLogger(__name__)
 
 MAX_ESCALATION_LEVEL = 3
 
@@ -309,6 +312,7 @@ def get_ticket(
         stmt = stmt.options(
             selectinload(Ticket.customer),
             selectinload(Ticket.category),
+            selectinload(Ticket.ai_suggested_category),
             selectinload(Ticket.assignee),
         )
     ticket = db.scalars(stmt).first()
@@ -384,6 +388,21 @@ def create_ticket(db: Session, payload: TicketCreate) -> Ticket:
 
     db.flush()
     db.refresh(ticket)
+
+    # Best-effort, mirroring app.services.channels.service.enqueue_outbound:
+    # a category suggestion is a nice-to-have, never a precondition for the
+    # ticket to exist. Every exception (AIProviderError, a network timeout, a
+    # misconfigured key) is the provider's problem, not the caller's, so it
+    # is swallowed here rather than failing ticket creation.
+    try:
+        from app.services.ai import categorization as ai_categorization
+
+        ai_categorization.suggest_category(db, ticket.id)
+    except Exception as exc:
+        logger.warning(
+            "AI category suggestion failed for ticket %s: %s", ticket.id, exc
+        )
+
     return ticket
 
 
@@ -400,6 +419,13 @@ def update_ticket(db: Session, ticket_id: uuid.UUID, payload: TicketUpdate) -> T
 
     for field, value in data.items():
         setattr(ticket, field, value)
+
+    if "category_id" in data:
+        # Whether this PATCH came from clicking "Apply" (the suggestion now
+        # equals what was just cleared -- harmless) or an unrelated manual
+        # edit (the suggestion no longer describes the ticket's current
+        # state), any write to category_id invalidates the stale suggestion.
+        ticket.ai_suggested_category_id = None
 
     if "priority" in data and data["priority"] != old_priority:
         _record(

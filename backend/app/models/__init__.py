@@ -12,6 +12,10 @@ from app.models.channel import (
     Channel,
     ChannelMessage,
 )
+from app.models.chatbot import (
+    ChatbotMessage,
+    ChatbotSession,
+)
 from app.models.customer import (
     Attachment,
     ContactDetail,
@@ -46,6 +50,8 @@ __all__ = [
     "Attachment",
     "Channel",
     "ChannelMessage",
+    "ChatbotMessage",
+    "ChatbotSession",
     "ContactDetail",
     "Customer",
     "Interaction",

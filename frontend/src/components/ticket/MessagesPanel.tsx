@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { suggestReply } from "../../api/ai";
 import { listChannels, listTicketMessages, sendTicketMessage } from "../../api/channels";
 import QuickReplyPicker from "../dashboard/QuickReplyPicker";
 import type { Channel, ChannelMessage, ChannelSlug, MessageStatus } from "../../types/channel";
@@ -45,6 +46,8 @@ export default function MessagesPanel({ ticketId, ticket = null }: Props) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [suggesting, setSuggesting] = useState(false);
+  const [suggestionActive, setSuggestionActive] = useState(false);
   const bodyRef = useRef<HTMLTextAreaElement>(null);
 
   const load = useCallback(async () => {
@@ -79,6 +82,33 @@ export default function MessagesPanel({ ticketId, ticket = null }: Props) {
     void load();
   }, [load]);
 
+  function updateBody(next: string) {
+    setBody(next);
+    setSuggestionActive(false);
+  }
+
+  const hasInboundMessage = messages.some((message) => message.direction === "inbound");
+
+  async function handleSuggestReply() {
+    if (body.trim() !== "") {
+      const proceed = window.confirm(
+        "Replace your draft with an AI-suggested reply? Your current draft will be lost.",
+      );
+      if (!proceed) return;
+    }
+    setSuggesting(true);
+    setError(null);
+    try {
+      const draft = await suggestReply(ticketId);
+      setBody(draft);
+      setSuggestionActive(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSuggesting(false);
+    }
+  }
+
   async function handleSend(event: React.FormEvent) {
     event.preventDefault();
     if (!slug) return;
@@ -87,6 +117,7 @@ export default function MessagesPanel({ ticketId, ticket = null }: Props) {
     try {
       const sent = await sendTicketMessage(ticketId, { channel_slug: slug, body });
       setBody("");
+      setSuggestionActive(false);
       await load();
       // A failed send is a 201, not a rejected promise: the row exists and
       // carries the reason. Surface it next to the composer as well as in the
@@ -161,17 +192,38 @@ export default function MessagesPanel({ ticketId, ticket = null }: Props) {
           <QuickReplyPicker
             textareaRef={bodyRef}
             value={body}
-            onChange={setBody}
+            onChange={updateBody}
             context={{ ticket: ticket ?? undefined, customer: ticket?.customer }}
           />
+          <button
+            type="button"
+            onClick={() => void handleSuggestReply()}
+            disabled={!hasInboundMessage || suggesting || busy}
+            title={
+              hasInboundMessage
+                ? undefined
+                : "Nothing from the customer yet to draft a reply to"
+            }
+            style={{ ...styles.button, fontSize: "0.85rem" }}
+          >
+            {suggesting ? "Suggesting…" : "Suggest a reply"}
+          </button>
         </div>
+        {suggestionActive && (
+          <p
+            role="status"
+            style={{ ...styles.muted, margin: "0.35rem 0 0", fontSize: "0.8rem" }}
+          >
+            AI-drafted suggestion — review and edit before sending.
+          </p>
+        )}
         <textarea
           ref={bodyRef}
           aria-label="Message body"
           placeholder="Write a reply…"
           rows={3}
           value={body}
-          onChange={(event) => setBody(event.target.value)}
+          onChange={(event) => updateBody(event.target.value)}
           style={{ ...styles.input, width: "100%", marginTop: "0.5rem" }}
         />
         <button

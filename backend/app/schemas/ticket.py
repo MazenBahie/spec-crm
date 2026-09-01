@@ -23,6 +23,8 @@ TicketEventType = Literal[
     "unassigned",
     "escalated",
     "commented",
+    "ai_summary_generated",
+    "ai_category_suggested",
 ]
 
 
@@ -118,6 +120,7 @@ class TicketRead(BaseModel):
     reference: str
     customer_id: uuid.UUID
     category_id: uuid.UUID | None
+    ai_suggested_category_id: uuid.UUID | None
     assignee_id: uuid.UUID | None
     subject: str
     description: str
@@ -131,6 +134,8 @@ class TicketRead(BaseModel):
     created_at: datetime
     updated_at: datetime
     is_overdue: bool
+    ai_summary: str | None
+    ai_summary_generated_at: datetime | None
 
 
 class TicketDetailRead(TicketRead):
@@ -138,6 +143,7 @@ class TicketDetailRead(TicketRead):
 
     customer: CustomerRead
     category: TicketCategoryRead | None
+    ai_suggested_category: TicketCategoryRead | None
     assignee: AgentRead | None
 
 
