@@ -7,3 +7,4 @@ psycopg[binary]>=3.2
 alembic>=1.13
 python-multipart>=0.0.9
 bcrypt>=4.1
+anthropic>=0.40,<1.0
